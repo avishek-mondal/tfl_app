@@ -1,17 +1,18 @@
+import ast
 import typing as ty
 from abc import abstractmethod
-from sqlalchemy.engine.url import URL
-
-from sqlalchemy import Column, String, create_engine
-from sqlalchemy.ext.declarative import declarative_base
-import sql_config as config
-from sqlalchemy.exc import ProgrammingError
-from sqlalchemy.orm import sessionmaker
 from contextlib import contextmanager
-from misc_utils import retry_func
 
+import sqlalchemy
+from sqlalchemy import Column, String, create_engine
+from sqlalchemy.engine.url import URL
+from sqlalchemy.exc import ProgrammingError
+from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy.orm import sessionmaker
 
 import plog
+import sql_config as config
+from misc_utils import retry_func
 
 Base = declarative_base()
 
@@ -43,7 +44,7 @@ class AbstractMemoryStore:
         pass
 
     @abstractmethod
-    def add_pending_task_id(self, task_id, url):
+    def add_pending_task_id(self, task_id, dt_str: str, url: str):
         pass
 
     @abstractmethod
@@ -150,7 +151,7 @@ class SQLStore(AbstractMemoryStore):
         conn, retries = retry_func(self.engine.connect,
                                    max_attempts=3,
                                    waiting_time=3)
-        plog.info(f"successfully connected after {retries} times")                                   
+        plog.info(f"successfully connected after {retries} times")
         conn.connection.set_isolation_level(0)
         try:
             conn.execute(f"CREATE DATABASE {config.DB_NAME}")
@@ -191,6 +192,92 @@ class SQLStore(AbstractMemoryStore):
 
 
     def remove_pending_task_id(self, task_id):
+        plog.info(f"Removing pending task_id {task_id}")
         with self.session_scope() as s:
-            to_del = s.query(PendingTaskIds).filter(
-                PendingTaskIds.task_id == task_id).first()
+            try:
+                to_del = s.query(PendingTaskIds).filter(
+                    PendingTaskIds.task_id == task_id).first()
+            except sqlalchemy.orm.exc.NoResultFound as e:
+                plog.error(
+                    f"could not find task_id {task_id} in PendingTaskIds table"
+                )
+            if not to_del:
+                return
+            try:
+                s.delete(to_del)
+            except Exception as e:
+                plog.error(f"could not delete {to_del.task_id}", err=e)
+
+    def add_pending_task_id(self, task_id, dt_str: str, url: str):
+        with self.session_scope() as s:
+            try:
+                s.add(PendingTaskIds(task_id=task_id, dt_str=dt_str, url=url))
+            except Exception as e:
+                err_msg = (f"could not add task_id = {task_id} "
+                           f"dt_str={dt_str} url = {url}")
+                plog.error(err_msg, err=e)
+
+
+    def is_pending_task_id(self, task_id):
+        with self.session_scope() as s:
+            try:
+                to_find = s.query(PendingTaskIds).filter(
+                    PendingTaskIds.task_id == task_id).first()
+            except sqlalchemy.orm.exc.NoResultFound as e:
+                return False
+            return to_find is not None
+
+
+    def get_task_id_response(self, task_id: str):
+        with self.session_scope() as s:
+            try:
+                res = s.query(TaskId2Response.response).filter(
+                    TaskId2Response.task_id == task_id).one_or_none()
+            except sqlalchemy.orm.exc.NoResultFound as e:
+                plog.error(f"task_id {task_id} is not in TaskId2Response table", err = e)
+                raise e
+            if res:
+                return ast.literal_eval(res.response)
+
+
+    def get_all_pending_tasks(self) -> list:
+        with self.session_scope() as s:
+            try:
+                res = s.query(PendingTaskIds.task_id).all()
+            except sqlalchemy.orm.exc.NoResultFound as e:
+                plog.error(
+                    f"No pending tasks found",
+                    err=e)
+                raise e
+            if res:
+                return [task_id for task_id, in res]
+
+    def remove_finished_task(self, task_id):
+        plog.info(f"Removing finished task_id {task_id}")
+        with self.session_scope() as s:
+            try:
+                to_del = s.query(TaskId2Response).filter(
+                    TaskId2Response.task_id == task_id).first()
+            except sqlalchemy.orm.exc.NoResultFound as e:
+                plog.error(
+                    f"could not find task_id {task_id} in TaskId2Response table"
+                )
+            if not to_del:
+                return
+            try:
+                s.delete(to_del)
+            except Exception as e:
+                plog.error(f"could not delete {to_del.task_id}", err=e)
+
+    def get_all_finished_tasks(self) -> dict:
+        with self.session_scope() as s:
+            try:
+                res = s.query(TaskId2Response).all()
+            except Exception as e:
+                plog.error("Could not find TaskId2Response", err=e)
+                raise e
+            if res:
+                return {
+                    row.task_id: ast.literal_eval(row.response)
+                    for row in res
+                }
