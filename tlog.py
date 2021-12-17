@@ -1,7 +1,9 @@
 import structlog
 from structlog.stdlib import BoundLogger
 
-_global_logger: structlog.stdlib.BoundLogger = structlog.get_logger('root_plog')
+# tfl app logger - tlog
+
+_global_logger: BoundLogger = structlog.get_logger('root_tlog')
 
 
 def info(*args, **kwargs):

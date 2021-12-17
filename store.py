@@ -10,7 +10,7 @@ from sqlalchemy.exc import ProgrammingError
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
 
-import plog
+import tlog
 import sql_config as config
 from misc_utils import retry_func
 
@@ -71,19 +71,19 @@ class AbstractMemoryStore:
 class InMemoryStore(AbstractMemoryStore):
 
     def __init__(self):
-        plog.info("Store init")
+        tlog.info("Store init")
         self.task_id2response = dict()
         self.pending_task_ids = dict()
 
     def add_response(self, task_id, response):
-        plog.info(f"adding response for {task_id}", response=response)
+        tlog.info(f"adding response for {task_id}", response=response)
         self.task_id2response[task_id] = response
-        plog.info(f"added. task_id2response = {self.task_id2response}",
+        tlog.info(f"added. task_id2response = {self.task_id2response}",
                   store=self)
         self.remove_pending_task_id(task_id=task_id)
 
     def add_pending_task_id(self, task_id, dt_str: str, url: str):
-        plog.info(f"adding pending task for {dt_str}")
+        tlog.info(f"adding pending task for {dt_str}")
         self.pending_task_ids[task_id] = (dt_str, url)
 
     def remove_pending_task_id(self, task_id):
@@ -91,11 +91,11 @@ class InMemoryStore(AbstractMemoryStore):
             del self.pending_task_ids[task_id]
 
     def get_task_id_response(self, task_id) -> dict:
-        plog.info(f"getting response for {task_id}")
+        tlog.info(f"getting response for {task_id}")
         if task_id in self.task_id2response:
             return self.task_id2response[task_id]
         else:
-            plog.error(f"in store. task_id2response = {self.task_id2response}",
+            tlog.error(f"in store. task_id2response = {self.task_id2response}",
                        store=self)
             raise ValueError(f"Store does not have {task_id}")
 
@@ -129,7 +129,7 @@ def session_scope(session_maker: sessionmaker):
         yield session
         session.commit()
     except Exception as e:
-        plog.exception('Rolling back as exception occurred', exc=e)
+        tlog.exception('Rolling back as exception occurred', exc=e)
         session.rollback()
         raise e
     finally:
@@ -138,7 +138,7 @@ def session_scope(session_maker: sessionmaker):
 
 class SQLStore(AbstractMemoryStore):
     def __init__(self):
-        plog.info("Sql store init")
+        tlog.info("Sql store init")
 
         conn_options = dict(
             drivername="postgresql",
@@ -151,12 +151,12 @@ class SQLStore(AbstractMemoryStore):
         conn, retries = retry_func(self.engine.connect,
                                    max_attempts=3,
                                    waiting_time=3)
-        plog.info(f"successfully connected after {retries} times")
+        tlog.info(f"successfully connected after {retries} times")
         conn.connection.set_isolation_level(0)
         try:
             conn.execute(f"CREATE DATABASE {config.DB_NAME}")
         except ProgrammingError:
-            plog.info("Ignore error creating database, already exists")
+            tlog.info("Ignore error creating database, already exists")
         finally:
             conn.close()
         Base.metadata.create_all(self.engine)
@@ -170,7 +170,7 @@ class SQLStore(AbstractMemoryStore):
             yield session
             session.commit()
         except Exception as e:
-            plog.error(f'Rolling back as exception occurred: {str(e)}')
+            tlog.error(f'Rolling back as exception occurred: {str(e)}')
             session.rollback()
             raise e
         finally:
@@ -181,24 +181,24 @@ class SQLStore(AbstractMemoryStore):
             task_id = str(task_id)
         if response and not isinstance(response, str):
             response = str(response)
-        plog.info(f"adding response for {task_id}", response=response)
+        tlog.info(f"adding response for {task_id}", response=response)
 
         with self.session_scope() as s:
             to_insert = TaskId2Response(task_id=task_id, response=response)
             s.add(to_insert)
             s.commit()
-        plog.info("Done adding task_id to sql table")
+        tlog.info("Done adding task_id to sql table")
         self.remove_pending_task_id(task_id=task_id)
 
 
     def remove_pending_task_id(self, task_id):
-        plog.info(f"Removing pending task_id {task_id}")
+        tlog.info(f"Removing pending task_id {task_id}")
         with self.session_scope() as s:
             try:
                 to_del = s.query(PendingTaskIds).filter(
                     PendingTaskIds.task_id == task_id).first()
             except sqlalchemy.orm.exc.NoResultFound as e:
-                plog.error(
+                tlog.error(
                     f"could not find task_id {task_id} in PendingTaskIds table"
                 )
             if not to_del:
@@ -206,7 +206,7 @@ class SQLStore(AbstractMemoryStore):
             try:
                 s.delete(to_del)
             except Exception as e:
-                plog.error(f"could not delete {to_del.task_id}", err=e)
+                tlog.error(f"could not delete {to_del.task_id}", err=e)
 
     def add_pending_task_id(self, task_id, dt_str: str, url: str):
         with self.session_scope() as s:
@@ -215,7 +215,7 @@ class SQLStore(AbstractMemoryStore):
             except Exception as e:
                 err_msg = (f"could not add task_id = {task_id} "
                            f"dt_str={dt_str} url = {url}")
-                plog.error(err_msg, err=e)
+                tlog.error(err_msg, err=e)
 
 
     def is_pending_task_id(self, task_id):
@@ -234,7 +234,7 @@ class SQLStore(AbstractMemoryStore):
                 res = s.query(TaskId2Response.response).filter(
                     TaskId2Response.task_id == task_id).one_or_none()
             except sqlalchemy.orm.exc.NoResultFound as e:
-                plog.error(f"task_id {task_id} is not in TaskId2Response table", err = e)
+                tlog.error(f"task_id {task_id} is not in TaskId2Response table", err = e)
                 raise e
             if res:
                 return ast.literal_eval(res.response)
@@ -245,7 +245,7 @@ class SQLStore(AbstractMemoryStore):
             try:
                 res = s.query(PendingTaskIds.task_id).all()
             except sqlalchemy.orm.exc.NoResultFound as e:
-                plog.error(
+                tlog.error(
                     f"No pending tasks found",
                     err=e)
                 raise e
@@ -253,13 +253,13 @@ class SQLStore(AbstractMemoryStore):
                 return [task_id for task_id, in res]
 
     def remove_finished_task(self, task_id):
-        plog.info(f"Removing finished task_id {task_id}")
+        tlog.info(f"Removing finished task_id {task_id}")
         with self.session_scope() as s:
             try:
                 to_del = s.query(TaskId2Response).filter(
                     TaskId2Response.task_id == task_id).first()
             except sqlalchemy.orm.exc.NoResultFound as e:
-                plog.error(
+                tlog.error(
                     f"could not find task_id {task_id} in TaskId2Response table"
                 )
             if not to_del:
@@ -267,14 +267,14 @@ class SQLStore(AbstractMemoryStore):
             try:
                 s.delete(to_del)
             except Exception as e:
-                plog.error(f"could not delete {to_del.task_id}", err=e)
+                tlog.error(f"could not delete {to_del.task_id}", err=e)
 
     def get_all_finished_tasks(self) -> dict:
         with self.session_scope() as s:
             try:
                 res = s.query(TaskId2Response).all()
             except Exception as e:
-                plog.error("Could not find TaskId2Response", err=e)
+                tlog.error("Could not find TaskId2Response", err=e)
                 raise e
             if res:
                 return {

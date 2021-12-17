@@ -1,6 +1,6 @@
 import unittest
 import subprocess
-import plog
+import tlog
 
 from store import SQLStore
 import sql_config as config
@@ -21,7 +21,7 @@ class SQLTest(unittest.TestCase):
             f'{cls._container_name}', 'postgres:11.5-alpine'
         ]).decode("utf-8").split("\n")
 
-        plog.info(f"docker run done. container = {container}")
+        tlog.info(f"docker run done. container = {container}")
 
 
         cls.store = SQLStore()
@@ -100,13 +100,13 @@ class SQLTest(unittest.TestCase):
             f"name={cls._container_name}",
         ]).decode("utf-8").split("\n")
         if containers:
-            plog.info(f"Stop {len(containers)} containers")
+            tlog.info(f"Stop {len(containers)} containers")
             for container in containers:
                 c_id = container.strip()
                 if c_id:
                     subprocess.check_output(["docker", "stop", c_id])
                     subprocess.check_output(["docker", "rm", c_id])
-                    plog.info(f"Stopped container {c_id}")
+                    tlog.info(f"Stopped container {c_id}")
 
     @classmethod
     def tearDownClass(cls):

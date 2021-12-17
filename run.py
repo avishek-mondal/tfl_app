@@ -5,7 +5,7 @@ from flask import Flask
 from flask_classful import FlaskView, request, route
 
 import constants as c
-import plog
+import tlog
 from store import get_store
 from tfl_scheduler import TflScheduler
 from url_helper import TflUrlHelper
@@ -16,13 +16,13 @@ app = Flask(__name__)
 class TflAppServer(FlaskView):
 
     def __init__(self):
-        plog.info("Initialising tfl app server")
+        tlog.info("Initialising tfl app server")
         self.store = get_store(in_memory_store=True)
         self.tfl_scheduler = TflScheduler(store=self.store)
         self.url_helper = TflUrlHelper()
 
     def tasks_post(self, raw_lines: str, schedule_time: str):
-        plog.info(f"schedule_time = {schedule_time}")
+        tlog.info(f"schedule_time = {schedule_time}")
         if schedule_time:
             dt = datetime.strptime(schedule_time, c.DT_STR)
             if dt < datetime.now():
@@ -53,7 +53,7 @@ class TflAppServer(FlaskView):
         try:
             to_ret = self.store.get_task_id_response(task_id)
         except ValueError as e:
-            plog.error(f"in run. task id not found", err=e)
+            tlog.error(f"in run. task id not found", err=e)
             return ("Task id has either not been scheduled, "
                     "or not been completed")
 
